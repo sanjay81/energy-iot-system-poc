@@ -1,0 +1,10 @@
+.git
+.github
+.venv
+__pycache__
+.pytest_cache
+*.pyc
+*.pdf
+*.odp
+iot_buffer.json
+results

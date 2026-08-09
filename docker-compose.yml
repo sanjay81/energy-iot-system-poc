@@ -1,0 +1,61 @@
+services:
+  mqtt:
+    image: eclipse-mosquitto:2.0
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mqtt-data:/mosquitto/data
+    healthcheck:
+      test: ["CMD", "mosquitto_sub", "-h", "localhost", "-t", "$$SYS/broker/uptime", "-C", "1", "-W", "3"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+
+  simulators:
+    build: .
+    command: ["python", "-m", "simulators.coordinator"]
+    environment:
+      SIMULATOR_HOST: "0.0.0.0"
+    ports:
+      - "5020:5020"
+      - "5021:5021"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; socket.create_connection(('localhost', 5020), 2).close(); socket.create_connection(('localhost', 5021), 2).close()"]
+      interval: 5s
+      timeout: 4s
+      retries: 10
+
+  gateway:
+    build: .
+    environment:
+      INVERTER_HOST: simulators
+      POWERMETER_HOST: simulators
+      MQTT_HOST: mqtt
+      BUFFER_FILE: /data/iot_buffer.json
+      POLL_INTERVAL: "2"
+    volumes:
+      - gateway-data:/data
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      simulators:
+        condition: service_healthy
+    restart: unless-stopped
+
+  dashboard:
+    build: .
+    command: ["python", "-m", "cloud.dashboard"]
+    environment:
+      MQTT_HOST: mqtt
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+    profiles: ["dashboard"]
+    tty: true
+
+volumes:
+  mqtt-data:
+  gateway-data:

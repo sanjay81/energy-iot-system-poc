@@ -1,0 +1,13 @@
+.DS_Store
+.pytest_cache/
+__pycache__/
+*.py[cod]
+venv/
+.venv/
+
+# Runtime and generated test artifacts
+iot_buffer.json
+log.html
+output.xml
+report.html
+results/
