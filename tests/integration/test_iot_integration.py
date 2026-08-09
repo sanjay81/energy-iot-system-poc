@@ -1,10 +1,8 @@
 # tests/integration/test_iot_integration.py
 
 import time
-import threading
 import pytest
 from simulators.coordinator import SystemCoordinator
-from simulators.scenarios import EnergyState
 from iot_device.iot_device import IoTDevice
 
 
