@@ -147,9 +147,9 @@ class EnergyDashboard:
         table.add_row(
             "🔋  Battery Power",
             f"{abs(batt):.1f} W",
-            "[green]Charging[/green]"
+            "[red]Discharging[/red]"
             if batt > 0
-            else "[red]Discharging[/red]"
+            else "[green]Charging[/green]"
             if batt < 0
             else "[white]Idle[/white]"
         )
@@ -175,6 +175,32 @@ class EnergyDashboard:
             if delta < 500
             else "[red]HIGH[/red]"
         )
+
+        daily = latest.get("daily_energy") or {}
+        if daily:
+            table.add_section()
+            table.add_row(
+                "Today: PV generation",
+                f"{daily.get('pv_generation_wh', 0) / 1000:.3f} kWh",
+                daily.get("local_date", "")
+            )
+            table.add_row(
+                "Today: House consumption",
+                f"{daily.get('house_consumption_wh', 0) / 1000:.3f} kWh",
+                daily.get("timezone", "")
+            )
+            table.add_row(
+                "Today: Grid import/export",
+                f"{daily.get('grid_import_wh', 0) / 1000:.3f} / "
+                f"{daily.get('grid_export_wh', 0) / 1000:.3f} kWh",
+                "Import / Export"
+            )
+            table.add_row(
+                "Today: Battery charge/discharge",
+                f"{daily.get('battery_charge_wh', 0) / 1000:.3f} / "
+                f"{daily.get('battery_discharge_wh', 0) / 1000:.3f} kWh",
+                "Charge / Discharge"
+            )
 
         # Status panel
         buffered_str = (

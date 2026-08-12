@@ -1,6 +1,5 @@
 # iot_device/modbus_client.py
 
-import time
 import logging
 from pymodbus.client import ModbusTcpClient
 from pymodbus.exceptions import ModbusException
@@ -30,6 +29,14 @@ def registers_to_watts_signed_32(high: int, low: int) -> float:
     return raw / SCALING_FACTOR
 
 
+def registers_to_utc_timestamp(registers: list[int]) -> float:
+    """Decode four big-endian registers containing UTC epoch milliseconds."""
+    raw = 0
+    for register in registers:
+        raw = (raw << 16) | register
+    return raw / 1000.0
+
+
 class InverterModbusClient:
     """
     Reads from Inverter Simulator via Modbus TCP.
@@ -57,7 +64,7 @@ class InverterModbusClient:
         try:
             result = self.client.read_holding_registers(
                 address=0,
-                count=3,
+                count=7,
                 slave=1
             )
 
@@ -72,7 +79,7 @@ class InverterModbusClient:
                 "pv_production": raw_to_watts_unsigned(regs[0]),
                 "ac_output":     raw_to_watts_unsigned(regs[1]),
                 "battery_power": raw_to_watts_signed(regs[2]),
-                "timestamp":     time.time()
+                "timestamp": registers_to_utc_timestamp(regs[3:7])
             }
 
         except ModbusException as e:
@@ -106,7 +113,7 @@ class PowerMeterModbusClient:
         try:
             result = self.client.read_input_registers(
                 address=0,
-                count=2,
+                count=6,
                 slave=1
             )
 
@@ -120,7 +127,9 @@ class PowerMeterModbusClient:
                 "grid_power": registers_to_watts_signed_32(
                     result.registers[0], result.registers[1]
                 ),
-                "timestamp": time.time()
+                "timestamp": registers_to_utc_timestamp(
+                    result.registers[2:6]
+                )
             }
 
         except ModbusException as e:

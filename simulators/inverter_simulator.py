@@ -29,6 +29,7 @@ SCALING_FACTOR = 10
 REG_PV_PRODUCTION   = 0   # 40001
 REG_AC_OUTPUT       = 1   # 40002
 REG_BATTERY_POWER   = 2   # 40003
+REG_TIMESTAMP       = 3   # 40004-40007, UTC epoch milliseconds
 
 # Total registers we expose
 NUM_REGISTERS = 10
@@ -69,7 +70,7 @@ class InverterSimulator:
         Applies scaling factor.
 
         IMPORTANT: Modbus registers are unsigned 16-bit integers (0-65535).
-        Negative values (battery discharging) must be handled carefully.
+        Negative values (battery charging) must be handled carefully.
         We use two's complement for negative values.
         """
         raw = int(watts * SCALING_FACTOR)
@@ -80,6 +81,16 @@ class InverterSimulator:
             raw = raw & 0xFFFF  # two's complement 16-bit
 
         return raw
+
+    @staticmethod
+    def _timestamp_to_raw(timestamp: float) -> list[int]:
+        raw = int(timestamp * 1000)
+        return [(raw >> shift) & 0xFFFF for shift in (48, 32, 16, 0)]
+
+    def set_timestamp(self, timestamp: float) -> None:
+        self.store.setValues(
+            3, REG_TIMESTAMP, self._timestamp_to_raw(timestamp)
+        )
 
     def _update_registers(self):
         """
@@ -104,6 +115,7 @@ class InverterSimulator:
             self.store.setValues(3, REG_PV_PRODUCTION,   [pv_raw])
             self.store.setValues(3, REG_AC_OUTPUT,        [ac_raw])
             self.store.setValues(3, REG_BATTERY_POWER,    [battery_raw])
+            self.set_timestamp(time.time())
 
             logger.info(
                 f"[Inverter] Hour={self.hour:.1f} | "
@@ -117,7 +129,7 @@ class InverterSimulator:
             self.hour = (self.hour + 0.1) % 24
 
             # Update battery SOC based on charging/discharging
-            soc_change = (state.battery_power / 10000) * 0.1
+            soc_change = (-state.battery_power / 10000) * 0.1
             self.battery_soc = max(0, min(100,
                 self.battery_soc + soc_change
             ))

@@ -1,6 +1,7 @@
 # iot_device/calculator.py
 
 from dataclasses import dataclass
+from typing import Any
 
 
 @dataclass
@@ -12,11 +13,13 @@ class EnergyMeasurement:
     """
     pv_production: float        # from Inverter register 40001
     ac_output: float            # from Inverter register 40002
-    battery_power: float        # from Inverter register 40003
+    battery_power: float        # positive discharge, negative charge
     grid_power: float           # from Power Meter register 30001
     house_consumption: float    # calculated — never directly measured
     inverter_timestamp: float   # when Inverter was read
     powermeter_timestamp: float # when Power Meter was read
+    daily_energy: dict[str, Any] | None = None
+    accounting_status: str | None = None
 
     @property
     def timestamp_delta_ms(self) -> float:

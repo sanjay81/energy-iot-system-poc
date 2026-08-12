@@ -26,18 +26,19 @@ Verified capabilities:
 - QoS 1 MQTT measurements, status, Last Will, and fault topics.
 - Atomic disk buffering while MQTT is unavailable.
 - Chronological replay, removing records only after broker acknowledgement.
+- Event-driven Wh accounting with persistent Berlin-local daily totals.
 - Docker Compose startup and health checks.
 - Unit and Modbus integration tests, including golden datasets.
 
 ## Energy model and register contract
 
 Grid power is positive when importing and negative when exporting. Battery
-power is positive when charging and negative when discharging.
+power is positive when discharging and negative when charging.
 
 Household consumption is not read directly:
 
 ```text
-Inverter AC output = PV production - battery power
+Inverter AC output = PV production + battery power
 House consumption  = inverter AC output + grid power
 ```
 
@@ -46,11 +47,36 @@ House consumption  = inverter AC output + grid power
 | Inverter | 40001 | 0 | PV production | unsigned 16-bit | ÷ 10 W |
 | Inverter | 40002 | 1 | AC output | unsigned 16-bit | ÷ 10 W |
 | Inverter | 40003 | 2 | Battery power | signed 16-bit | ÷ 10 W |
+| Inverter | 40004–40007 | 3–6 | Device timestamp | unsigned 64-bit | UTC epoch ms |
 | Power meter | 30001–30002 | 0–1 | Grid power | signed 32-bit, big-endian | ÷ 10 W |
+| Power meter | 30003–30006 | 2–5 | Device timestamp | unsigned 64-bit | UTC epoch ms |
 
 Grid power uses two registers because a signed 16-bit value at this scale
 cannot represent export below `-3276.8 W`, while the simulated PV system can
 produce 6 kW.
+
+## Energy accounting
+
+The gateway accepts event-driven readings and uses consecutive device
+timestamps to integrate power with the trapezoidal rule. The Docker simulation
+polls every five seconds.
+
+Current daily totals include:
+
+- PV generation and household consumption
+- Grid import and export
+- Battery charge and discharge
+
+Timestamps originate at the simulated devices and are carried through Modbus
+as Unix epoch milliseconds representing UTC. Daily totals roll over at local
+midnight in `Europe/Berlin`, including daylight-saving transitions. An interval
+crossing midnight is split at the boundary.
+
+Intervals longer than 60 seconds are classified as stale/missing and are not
+integrated. A reading is identified by device/source and timestamp. Exact
+duplicates are ignored, while older out-of-order readings do not modify live
+totals. The latest accepted reading and current daily totals are persisted
+atomically so accounting continues after restart.
 
 ## Repository structure
 
@@ -145,8 +171,10 @@ Gateway configuration:
 | `MQTT_HOST` | `localhost` | MQTT broker host |
 | `MQTT_PORT` | `1883` | MQTT broker port |
 | `DEVICE_ID` | `energy_iot_001` | MQTT device identifier |
-| `POLL_INTERVAL` | `2.0` | Poll interval in seconds |
+| `POLL_INTERVAL` | `5.0` | Poll interval in seconds |
 | `BUFFER_FILE` | `iot_buffer.json` | Persistent buffer path |
+| `ENERGY_STATE_FILE` | `energy_accounting.json` | Accounting state path |
+| `ENERGY_TIMEZONE` | `Europe/Berlin` | Daily-total boundary timezone |
 
 ## Tests
 

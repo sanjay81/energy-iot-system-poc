@@ -3,6 +3,7 @@
 import time
 import logging
 import os
+from dataclasses import asdict
 from typing import Optional
 
 from iot_device.modbus_client import (
@@ -14,6 +15,7 @@ from iot_device.calculator import (
     calculate_house_consumption
 )
 from iot_device.publisher import MeasurementPublisher, NullPublisher
+from iot_device.energy_accounting import EnergyAccumulator, PowerSample
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -45,7 +47,9 @@ class IoTDevice:
         powermeter_host: str = "localhost",
         powermeter_port: int = 5021,
         poll_interval: float = POLL_INTERVAL,
-        publisher: MeasurementPublisher | None = None
+        publisher: MeasurementPublisher | None = None,
+        energy_accumulator: EnergyAccumulator | None = None,
+        device_id: str = "energy_iot_001",
     ):
         self.inverter_client = InverterModbusClient(
             host=inverter_host,
@@ -63,6 +67,8 @@ class IoTDevice:
         # MQTT is an adapter, not a hard dependency of the gateway.
         # Local runs and tests use a no-op publisher unless one is injected.
         self.publisher = publisher or NullPublisher()
+        self.energy_accumulator = energy_accumulator
+        self.device_id = device_id
 
     def connect(self) -> bool:
         """Connect to both Modbus devices."""
@@ -166,6 +172,20 @@ class IoTDevice:
             return None
         self._clear_fault("invalid_measurement")
 
+        if self.energy_accumulator:
+            accounting = self.energy_accumulator.process(
+                PowerSample(
+                    source=self.device_id,
+                    timestamp=measurement.inverter_timestamp,
+                    pv_w=measurement.pv_production,
+                    house_w=measurement.house_consumption,
+                    grid_w=measurement.grid_power,
+                    battery_w=measurement.battery_power,
+                )
+            )
+            measurement.accounting_status = accounting.status
+            measurement.daily_energy = asdict(accounting.totals)
+
         # Warn if timing gap too large
         if measurement.timestamp_delta_ms > MAX_TIMESTAMP_DELTA_MS:
             logger.warning(
@@ -218,22 +238,31 @@ if __name__ == "__main__":
     # inject another publisher or leave it disabled.
     from iot_device.mqtt_publisher import MQTTPublisher
 
+    device_id = os.getenv("DEVICE_ID", "energy_iot_001")
+    poll_interval = float(os.getenv("POLL_INTERVAL", "5.0"))
     device = IoTDevice(
         inverter_host=os.getenv("INVERTER_HOST", "localhost"),
         inverter_port=int(os.getenv("INVERTER_PORT", "5020")),
         powermeter_host=os.getenv("POWERMETER_HOST", "localhost"),
         powermeter_port=int(os.getenv("POWERMETER_PORT", "5021")),
-        poll_interval=float(os.getenv("POLL_INTERVAL", "2.0")),
+        poll_interval=poll_interval,
+        device_id=device_id,
+        energy_accumulator=EnergyAccumulator(
+            state_file=os.getenv(
+                "ENERGY_STATE_FILE", "energy_accounting.json"
+            ),
+            timezone_name=os.getenv("ENERGY_TIMEZONE", "Europe/Berlin"),
+        ),
         publisher=MQTTPublisher(
             broker_host=os.getenv("MQTT_HOST", "localhost"),
             broker_port=int(os.getenv("MQTT_PORT", "1883")),
-            device_id=os.getenv("DEVICE_ID", "energy_iot_001"),
+            device_id=device_id,
             buffer_file=os.getenv("BUFFER_FILE", "iot_buffer.json")
         )
     )
 
     if device.connect():
-        print("IoT Device connected. Polling every 2 seconds.")
+        print(f"IoT Device connected. Polling every {poll_interval:g} seconds.")
         print("Make sure both simulators are running first.")
         try:
             device.run()

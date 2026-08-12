@@ -48,6 +48,9 @@ class SystemCoordinator:
         """
         while self._running:
             if time.monotonic() < self._manual_until:
+                measurement_time = time.time()
+                self.inverter.set_timestamp(measurement_time)
+                self.power_meter.set_timestamp(measurement_time)
                 time.sleep(0.1)
                 continue
 
@@ -71,6 +74,8 @@ class SystemCoordinator:
                     ),
                 ]
             )
+            measurement_time = time.time()
+            self.inverter.set_timestamp(measurement_time)
 
             # Grid power derived from SAME state
             # This is what makes the two simulators consistent
@@ -78,7 +83,7 @@ class SystemCoordinator:
                 state.house_consumption
                 - state.inverter_ac_output
             )
-            self.power_meter.set_grid_power(grid_power)
+            self.power_meter.set_grid_power(grid_power, measurement_time)
 
             logger.info(
                 f"[Coordinator] Hour={self.hour:.1f} | "
@@ -93,7 +98,7 @@ class SystemCoordinator:
             self.hour = (self.hour + 0.1) % 24
 
             # Update battery SOC
-            soc_change = (state.battery_power / 10000) * 0.1
+            soc_change = (-state.battery_power / 10000) * 0.1
             self.battery_soc = max(
                 0, min(100, self.battery_soc + soc_change)
             )
@@ -152,11 +157,13 @@ class SystemCoordinator:
                 self.inverter._watts_to_raw(state.battery_power),
             ]
         )
+        measurement_time = time.time()
+        self.inverter.set_timestamp(measurement_time)
 
         grid_power = (
             state.house_consumption - state.inverter_ac_output
         )
-        self.power_meter.set_grid_power(grid_power)
+        self.power_meter.set_grid_power(grid_power, measurement_time)
 
         logger.info(
             f"[Coordinator] Scenario injected → "

@@ -1,8 +1,10 @@
 import threading
+import json
 from types import SimpleNamespace
 
 from iot_device.buffer import LocalBuffer
 from iot_device.mqtt_publisher import MQTTPublisher, TOPIC_MEASUREMENTS
+from iot_device.calculator import EnergyMeasurement
 
 
 class FakeMQTTClient:
@@ -23,6 +25,8 @@ def build_publisher(tmp_path):
     publisher.buffer = LocalBuffer(buffer_file=str(tmp_path / "buffer.json"))
     publisher._pending_replay_mid = None
     publisher._lock = threading.Lock()
+    publisher.device_id = "test-device"
+    publisher._connected = True
     return publisher
 
 
@@ -43,3 +47,24 @@ def test_replay_waits_for_ack_before_removing_record(tmp_path):
 
     publisher._on_publish(None, None, 11)
     assert publisher.buffer.is_empty
+
+
+def test_measurement_payload_contains_daily_energy_totals(tmp_path):
+    publisher = build_publisher(tmp_path)
+    measurement = EnergyMeasurement(
+        pv_production=3000,
+        ac_output=2500,
+        battery_power=-500,
+        grid_power=-500,
+        house_consumption=2000,
+        inverter_timestamp=100,
+        powermeter_timestamp=100.01,
+        accounting_status="integrated",
+        daily_energy={"local_date": "2026-08-12", "pv_generation_wh": 42.0},
+    )
+
+    assert publisher.publish_measurement(measurement)
+    payload = json.loads(publisher.client.messages[-1][1])
+
+    assert payload["accounting_status"] == "integrated"
+    assert payload["daily_energy"]["pv_generation_wh"] == 42.0

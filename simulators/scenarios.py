@@ -10,7 +10,7 @@ class EnergyState:
     """
     Represents the current energy state of the system.
     All values in Watts.
-    Positive battery = charging, negative = discharging.
+    Positive battery = discharging, negative = charging.
     Positive grid = importing, negative = exporting.
     """
     pv_production: float
@@ -25,21 +25,21 @@ class EnergyState:
         Negative = exporting to grid.
 
         Formula:
-        Grid = House Consumption - PV Production - Battery Discharge
+        Grid = House Consumption - PV Production - Battery Power
 
         Example 1 — sunny day, battery charging:
-        PV=5000, House=2000, Battery charging=1000
-        Grid = 2000 - 5000 + 1000 = -2000 (exporting 2000W)
+        PV=5000, House=2000, Battery charging=-1000
+        Grid = 2000 - (5000 + -1000) = -2000 (exporting 2000W)
 
         Example 2 — evening, battery discharging:
-        PV=0, House=2000, Battery discharging=-1500
-        Grid = 2000 - 0 - (-1500) ... wait
+        PV=0, House=2000, Battery discharging=1500
+        Grid = 2000 - (0 + 1500) = 500 (importing 500W)
 
         Simpler model:
-        Inverter AC Output = PV Production + Battery Discharge
+        Inverter AC Output = PV Production + Battery Power
         Grid = House Consumption - Inverter AC Output
         """
-        inverter_ac_output = self.pv_production - self.battery_power
+        inverter_ac_output = self.pv_production + self.battery_power
         return self.house_consumption - inverter_ac_output
 
     @property
@@ -48,7 +48,7 @@ class EnergyState:
         What the inverter puts on the AC bus.
         = PV production adjusted for battery charging/discharging
         """
-        output = self.pv_production - self.battery_power
+        output = self.pv_production + self.battery_power
         return max(0.0, output)  # cannot be negative
         #return self.pv_production - self.battery_power
 
@@ -101,7 +101,7 @@ def get_battery_power(pv: float, house: float,
     - If PV < House and battery not empty → discharge battery
     - Otherwise → 0
 
-    Positive = charging, Negative = discharging.
+    Positive = discharging, Negative = charging.
     Max charge/discharge rate: 3000W
 
     Scenario 1 → PV high, house low, battery not full
@@ -127,11 +127,11 @@ def get_battery_power(pv: float, house: float,
     if surplus > 0 and battery_soc < 95 and pv > 0:
 
         # Charge with surplus, up to 3000W
-        return min(surplus, 3000.0)
+        return -min(surplus, 3000.0)
 
     elif surplus < 0 and battery_soc > 5:
         # Discharge to cover deficit, up to 3000W
-        return max(surplus, -3000.0)
+        return min(-surplus, 3000.0)
 
     return 0.0
 

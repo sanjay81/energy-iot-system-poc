@@ -4,6 +4,7 @@ import time
 import pytest
 from simulators.coordinator import SystemCoordinator
 from iot_device.iot_device import IoTDevice
+from iot_device.energy_accounting import EnergyAccumulator
 
 
 class RecordingPublisher:
@@ -145,13 +146,13 @@ class TestGoldenDataset:
         QUADRANT 3 — Night, battery discharging.
         PV=0, battery covers house demand.
 
-        Inject: PV=0, House=1500, Battery=-1500
+        Inject: PV=0, House=1500, Battery=+1500
         Expected: AC=1500, Grid=0, House=1500
         """
         state, grid_power = coordinator.inject_scenario(
             pv=0,
             house=1500,
-            battery=-1500
+            battery=1500
         )
         time.sleep(0.5)
 
@@ -169,13 +170,13 @@ class TestGoldenDataset:
         QUADRANT 4 — Battery charging from PV surplus.
         PV > House, excess charges battery.
 
-        Inject: PV=5000, House=2000, Battery=2000
+        Inject: PV=5000, House=2000, Battery=-2000
         Expected: AC=3000, House=2000
         """
         state, grid_power = coordinator.inject_scenario(
             pv=5000,
             house=2000,
-            battery=2000
+            battery=-2000
         )
         time.sleep(0.5)
 
@@ -203,7 +204,7 @@ class TestGoldenDataset:
         coordinator.inject_scenario(
             pv=1000,
             house=500,
-            battery=-800
+            battery=800
         )
         time.sleep(0.5)
 
@@ -294,6 +295,43 @@ class TestTimingGap:
                 f"High variance in House Consumption: "
                 f"{readings} — timing gap suspected"
             )
+
+
+class TestEnergyAccounting:
+    def test_modbus_measurements_integrate_within_one_percent(
+        self, coordinator, tmp_path
+    ):
+        coordinator.inject_scenario(
+            pv=3600, house=1800, battery=0
+        )
+        publisher = RecordingPublisher()
+        device = IoTDevice(
+            publisher=publisher,
+            energy_accumulator=EnergyAccumulator(
+                state_file=str(tmp_path / "energy.json")
+            ),
+            device_id="integration-device",
+        )
+        assert device.connect()
+        try:
+            first = device.poll_once()
+            time.sleep(0.5)
+            second = device.poll_once()
+        finally:
+            device.disconnect()
+
+        elapsed_hours = (
+            second.inverter_timestamp - first.inverter_timestamp
+        ) / 3600
+        expected_pv_wh = 3600 * elapsed_hours
+        expected_house_wh = 1800 * elapsed_hours
+
+        assert second.daily_energy["pv_generation_wh"] == pytest.approx(
+            expected_pv_wh, rel=0.01
+        )
+        assert second.daily_energy["house_consumption_wh"] == pytest.approx(
+            expected_house_wh, rel=0.01
+        )
 
 
 # ─────────────────────────────────────────────────────────────
@@ -440,7 +478,7 @@ class TestSilentFailureDetection:
         coordinator.inject_scenario(
             pv=1000,
             house=2000,
-            battery=3000  # charging more than PV
+            battery=-3000  # charging more than PV
         )
         time.sleep(0.5)
 

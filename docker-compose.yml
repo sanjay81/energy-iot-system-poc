@@ -33,7 +33,9 @@ services:
       POWERMETER_HOST: simulators
       MQTT_HOST: mqtt
       BUFFER_FILE: /data/iot_buffer.json
-      POLL_INTERVAL: "2"
+      ENERGY_STATE_FILE: /data/energy_accounting.json
+      ENERGY_TIMEZONE: Europe/Berlin
+      POLL_INTERVAL: "5"
     volumes:
       - gateway-data:/data
     depends_on:

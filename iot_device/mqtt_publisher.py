@@ -188,6 +188,9 @@ class MQTTPublisher:
             ),
             "buffered": False
         }
+        if measurement.daily_energy is not None:
+            payload["daily_energy"] = measurement.daily_energy
+            payload["accounting_status"] = measurement.accounting_status
 
         with self._lock:
             if self._connected:

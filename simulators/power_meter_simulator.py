@@ -17,6 +17,7 @@ SCALING_FACTOR = 10
 
 # Input register address
 REG_GRID_POWER = 0  # 30001
+REG_TIMESTAMP = 2   # 30003-30006, UTC epoch milliseconds
 
 
 class PowerMeterSimulator:
@@ -58,7 +59,17 @@ class PowerMeterSimulator:
         raw = int(watts * SCALING_FACTOR) & 0xFFFFFFFF
         return [(raw >> 16) & 0xFFFF, raw & 0xFFFF]
 
-    def set_grid_power(self, watts: float):
+    @staticmethod
+    def _timestamp_to_raw(timestamp: float) -> list[int]:
+        raw = int(timestamp * 1000)
+        return [(raw >> shift) & 0xFFFF for shift in (48, 32, 16, 0)]
+
+    def set_timestamp(self, timestamp: float) -> None:
+        self.store.setValues(
+            4, REG_TIMESTAMP, self._timestamp_to_raw(timestamp)
+        )
+
+    def set_grid_power(self, watts: float, timestamp: float | None = None):
         """
         Set grid power directly.
         Used by IoT Device integration and fault injection tests.
@@ -69,6 +80,7 @@ class PowerMeterSimulator:
         self._grid_power = watts
         raw = self._watts_to_raw(watts)
         self.store.setValues(4, REG_GRID_POWER, raw)
+        self.set_timestamp(timestamp if timestamp is not None else time.time())
         logger.info(
             f"[PowerMeter] Grid Power = {watts:.1f}W "
             f"({'importing' if watts > 0 else 'exporting' if watts < 0 else 'balanced'})"
@@ -106,6 +118,7 @@ class PowerMeterSimulator:
         self._grid_power = -self._grid_power
         raw = self._watts_to_raw(self._grid_power)
         self.store.setValues(4, REG_GRID_POWER, raw)
+        self.set_timestamp(time.time())
         logger.warning(
             "[PowerMeter] CT CLAMP FAULT — sign flipped "
             f"Grid Power now = {self._grid_power:.1f}W"

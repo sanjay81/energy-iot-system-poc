@@ -1,7 +1,10 @@
 # tests/unit/test_calculator.py
 
 import pytest
-from iot_device.modbus_client import registers_to_watts_signed_32
+from iot_device.modbus_client import (
+    registers_to_utc_timestamp,
+    registers_to_watts_signed_32,
+)
 
 
 def test_signed_32_bit_grid_export_supports_more_than_3276_watts():
@@ -9,6 +12,16 @@ def test_signed_32_bit_grid_export_supports_more_than_3276_watts():
     high, low = (raw >> 16) & 0xFFFF, raw & 0xFFFF
 
     assert registers_to_watts_signed_32(high, low) == -4000
+
+
+def test_device_utc_timestamp_decodes_from_four_registers():
+    timestamp = 1_786_527_564.704
+    raw = int(timestamp * 1000)
+    registers = [(raw >> shift) & 0xFFFF for shift in (48, 32, 16, 0)]
+
+    assert registers_to_utc_timestamp(registers) == pytest.approx(
+        timestamp, abs=0.001
+    )
 from iot_device.calculator import calculate_house_consumption
 from simulators.scenarios import (
     EnergyState,
@@ -55,7 +68,7 @@ class TestInverterACOutput:
         state = EnergyState(
             pv_production=5000,
             house_consumption=2000,
-            battery_power=1500   # charging
+            battery_power=-1500  # charging
         )
         assert state.inverter_ac_output == 3500
 
@@ -68,7 +81,7 @@ class TestInverterACOutput:
         state = EnergyState(
             pv_production=1000,
             house_consumption=3000,
-            battery_power=-1500  # discharging
+            battery_power=1500   # discharging
         )
         assert state.inverter_ac_output == 2500
 
@@ -94,7 +107,7 @@ class TestInverterACOutput:
         state = EnergyState(
             pv_production=0,
             house_consumption=1500,
-            battery_power=-1500  # discharging
+            battery_power=1500   # discharging
         )
         assert state.inverter_ac_output == 1500
 
@@ -173,9 +186,9 @@ class TestGridPower:
         state = EnergyState(
             pv_production=0,
             house_consumption=2000,
-            battery_power=-1500  # discharging 1500W
+            battery_power=1500   # discharging 1500W
         )
-        # AC Output = 0 - (-1500) = 1500W
+        # AC Output = 0 + 1500 = 1500W
         # Grid = House - AC Output = 2000 - 1500 = 500W importing
         assert state.grid_power == 500
         assert state.grid_power > 0  # still importing from grid
@@ -229,7 +242,7 @@ class TestRegisterEncoding:
 
     def test_battery_negative_encodes_and_decodes(self):
         """
-        Battery discharging → negative watts.
+        Battery charging → negative watts.
         Must survive encode → raw → decode round trip.
         """
         battery_watts = -1500.0
@@ -238,7 +251,7 @@ class TestRegisterEncoding:
         assert decoded == pytest.approx(battery_watts, abs=0.1)
 
     def test_battery_positive_encodes_and_decodes(self):
-        """Battery charging → positive watts."""
+        """Battery discharging → positive watts."""
         battery_watts = 2000.0
         raw = self.watts_to_raw(battery_watts)
         decoded = self.raw_to_watts_signed(raw)
@@ -280,13 +293,13 @@ class TestBatteryStrategy:
         result = get_battery_power(
             pv=5000, house=2000, battery_soc=50
         )
-        assert result > 0
+        assert result < 0
 
     def test_discharges_when_deficit_and_not_empty(self):
         result = get_battery_power(
             pv=0, house=2000, battery_soc=50
         )
-        assert result < 0
+        assert result > 0
 
     def test_idle_when_battery_empty_and_deficit(self):
         result = get_battery_power(
@@ -308,7 +321,7 @@ class TestBatteryStrategy:
         result = get_battery_power(
             pv=0, house=500, battery_soc=50
         )
-        assert result <= 0
+        assert result >= 0
 
     def test_charge_capped_at_3000w(self):
         """Battery charge rate cannot exceed hardware limit."""
