@@ -20,6 +20,8 @@ class MeasurementPublisher(Protocol):
 
     def publish_fault(self, fault_code: str) -> None: ...
 
+    def set_battery_command_handler(self, handler) -> None: ...
+
 
 class NullPublisher:
     """No-op publisher for local runs that do not need cloud transport."""
@@ -34,4 +36,7 @@ class NullPublisher:
         return True
 
     def publish_fault(self, fault_code: str) -> None:
+        pass
+
+    def set_battery_command_handler(self, handler) -> None:
         pass

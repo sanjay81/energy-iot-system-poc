@@ -25,6 +25,7 @@ jobs:
       - run: docker compose up --build --wait
       - run: docker compose ps
       - run: docker compose --profile baseline run --rm baseline
+      - run: docker compose --profile battery-check run --rm battery-check
       - if: always()
         run: docker compose logs
       - if: always()

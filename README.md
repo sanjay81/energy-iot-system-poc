@@ -29,6 +29,7 @@ Verified capabilities:
 - Event-driven Wh accounting with persistent Berlin-local daily totals.
 - Auditable daily KPIs with persistent PV/grid/unknown battery provenance.
 - Reproducible accelerated 24-hour no-control baseline scenario and report.
+- Safe command-driven battery interface with SOC and power-limit enforcement.
 - Docker Compose startup and health checks.
 - Unit and Modbus integration tests, including golden datasets.
 
@@ -50,6 +51,11 @@ House consumption  = inverter AC output + grid power
 | Inverter | 40002 | 1 | AC output | unsigned 16-bit | ÷ 10 W |
 | Inverter | 40003 | 2 | Battery power | signed 16-bit | ÷ 10 W |
 | Inverter | 40004–40007 | 3–6 | Device timestamp | unsigned 64-bit | UTC epoch ms |
+| Inverter | 40008 | 7 | Battery SOC | unsigned 16-bit | ÷ 10 % |
+| Inverter | 40009 | 8 | Usable battery capacity | unsigned 16-bit | Wh |
+| Inverter | 40010–40014 | 9–13 | Charge/discharge and SOC limits, availability | unsigned 16-bit | ÷ 10 |
+| Inverter | 40015–40016 | 14–15 | Requested battery power | signed 32-bit | ÷ 10 W |
+| Inverter | 40017–40020 | 16–19 | Command and acknowledgement sequences, status, reason | unsigned 16-bit | enum |
 | Power meter | 30001–30002 | 0–1 | Grid power | signed 32-bit, big-endian | ÷ 10 W |
 | Power meter | 30003–30006 | 2–5 | Device timestamp | unsigned 64-bit | UTC epoch ms |
 
@@ -149,6 +155,51 @@ benchmark is `simulations/golden/baseline_report.json` and currently records
 53.474483 kWh PV generation, 24.722733 kWh household consumption, 9.660677 kWh
 grid import, and 38.412427 kWh grid export.
 
+## Step 4 safe battery control
+
+Step 4 makes the battery explicitly command-driven. The coordinator no longer
+calculates charge or discharge from PV surplus or household deficit. Without a
+command, the battery remains idle; deciding *when* operation is beneficial is
+reserved for a later EMS-control phase.
+
+The sign convention is unchanged: positive power discharges and negative power
+charges. Commands use schema version 1 and contain a unique command ID, target
+device, requested watts, UTC issue time, and optional expiry. The gateway
+rejects malformed, wrong-device, unsupported-version, and stale commands before
+writing Modbus. The battery remains the final safety authority and rejects
+commands exceeding charge/discharge power or configured SOC limits.
+
+```json
+{
+  "schema_version": 1,
+  "command_id": "demo-charge-1",
+  "device_id": "energy_iot_001",
+  "requested_power_w": -1200,
+  "issued_at": 1786550400,
+  "expires_at": 1786550430
+}
+```
+
+Publish commands to `energy-iot/<device-id>/battery/commands`. Acknowledgements
+arrive on `energy-iot/<device-id>/battery/acknowledgements` with `accepted` or
+`rejected`, actual power, and a structured rejection reason. Measurement
+messages include `battery_state`: requested and actual power, SOC, usable
+capacity, power/SOC limits, availability, and operating mode. Efficiency is an
+explicit nullable field reserved for the later loss model.
+
+Command IDs are idempotent and the latest 100 acknowledgements persist across
+gateway restarts. Battery SOC, requested/actual power, availability, and the
+latest device command also persist atomically. Separate request and
+acknowledgement sequences prevent a previous result from being mistaken for a
+new device response.
+
+Run the Docker MQTT → gateway → Modbus → telemetry safety check:
+
+```bash
+docker compose up --build --wait
+docker compose --profile battery-check run --rm battery-check
+```
+
 ## Repository structure
 
 ```text
@@ -247,6 +298,8 @@ Gateway configuration:
 | `BUFFER_FILE` | `iot_buffer.json` | Persistent buffer path |
 | `ENERGY_STATE_FILE` | `energy_accounting.json` | Accounting state path |
 | `ENERGY_TIMEZONE` | `Europe/Berlin` | Daily-total boundary timezone |
+| `BATTERY_CONTROL_STATE_FILE` | `battery_control.json` | Command IDs and acknowledgements |
+| `BATTERY_STATE_FILE` | unset | Simulator SOC and device command state |
 
 ## Tests
 

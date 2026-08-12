@@ -4,9 +4,15 @@ import time
 import threading
 import logging
 import os
-from simulators.scenarios import get_energy_state
+from simulators.scenarios import (
+    EnergyState,
+    get_house_consumption,
+    get_pv_production,
+)
 from simulators.inverter_simulator import InverterSimulator
 from simulators.power_meter_simulator import PowerMeterSimulator
+from simulators.battery_device import BatteryDevice
+from iot_device.modbus_client import registers_to_watts_signed_32
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,6 +50,10 @@ class SystemCoordinator:
         )
         self.hour = 8.0
         self.battery_soc = 50.0
+        self.battery = BatteryDevice(
+            state_file=os.getenv("BATTERY_STATE_FILE")
+        )
+        self._last_command_sequence = 0
         self._running = False
         self._manual_until = 0.0
 
@@ -53,6 +63,7 @@ class SystemCoordinator:
         Both devices read from the same energy state.
         """
         while self._running:
+            self._apply_battery_request()
             if time.monotonic() < self._manual_until:
                 measurement_time = time.time()
                 self.inverter.set_timestamp(measurement_time)
@@ -60,9 +71,12 @@ class SystemCoordinator:
                 time.sleep(0.1)
                 continue
 
-            state = get_energy_state(
-                hour=self.hour,
-                battery_soc=self.battery_soc
+            self.battery.advance(1.0)
+            battery = self.battery.snapshot()
+            state = EnergyState(
+                pv_production=get_pv_production(self.hour),
+                house_consumption=get_house_consumption(self.hour),
+                battery_power=battery["actual_power_w"],
             )
 
             # Update Inverter registers
@@ -82,6 +96,7 @@ class SystemCoordinator:
             )
             measurement_time = time.time()
             self.inverter.set_timestamp(measurement_time)
+            self._write_battery_telemetry()
 
             # Grid power derived from SAME state
             # This is what makes the two simulators consistent
@@ -102,12 +117,6 @@ class SystemCoordinator:
 
             # Advance time
             self.hour = (self.hour + 0.1) % 24
-
-            # Update battery SOC
-            soc_change = (-state.battery_power / 10000) * 0.1
-            self.battery_soc = max(
-                0, min(100, self.battery_soc + soc_change)
-            )
 
             time.sleep(1)
 
@@ -131,6 +140,62 @@ class SystemCoordinator:
         self.inverter.start(update_registers=False)
         self.power_meter.start()
         logger.info("[Coordinator] Manual-clock simulators started")
+
+    def _apply_battery_request(self):
+        registers = self.inverter.store.getValues(3, 14, count=3)
+        sequence = registers[2]
+        if sequence == self._last_command_sequence:
+            return
+        self._last_command_sequence = sequence
+        requested = registers_to_watts_signed_32(registers[0], registers[1])
+        acknowledgement = self.battery.command(
+            f"modbus-{sequence}", requested
+        )
+        if acknowledgement["status"] == "accepted":
+            self._manual_until = 0.0
+            self.inverter.store.setValues(
+                3,
+                2,
+                [
+                    self.inverter._watts_to_raw(
+                        acknowledgement["actual_power_w"]
+                    )
+                ],
+            )
+        status = 1 if acknowledgement["status"] == "accepted" else 2
+        reasons = {
+            None: 0,
+            "device_unavailable": 1,
+            "charge_power_limit_exceeded": 2,
+            "discharge_power_limit_exceeded": 3,
+            "maximum_soc_reached": 4,
+            "minimum_soc_reached": 5,
+        }
+        self.inverter.store.setValues(
+            3,
+            17,
+            [
+                sequence,
+                status,
+                reasons[acknowledgement["rejection_reason"]],
+            ],
+        )
+
+    def _write_battery_telemetry(self):
+        battery = self.battery.snapshot()
+        self.inverter.store.setValues(
+            3,
+            7,
+            [
+                int(battery["soc_percent"] * 10),
+                int(battery["usable_capacity_kwh"] * 1000),
+                int(battery["max_charge_power_w"] * 10),
+                int(battery["max_discharge_power_w"] * 10),
+                int(battery["min_soc_percent"] * 10),
+                int(battery["max_soc_percent"] * 10),
+                int(battery["available"]),
+            ],
+        )
 
     def stop(self):
         self._running = False

@@ -3,6 +3,7 @@
 import time
 import logging
 import os
+import threading
 from dataclasses import asdict
 from typing import Optional
 
@@ -16,6 +17,7 @@ from iot_device.calculator import (
 )
 from iot_device.publisher import MeasurementPublisher, NullPublisher
 from iot_device.energy_accounting import EnergyAccumulator, PowerSample
+from iot_device.battery_control import BatteryController
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -50,6 +52,7 @@ class IoTDevice:
         publisher: MeasurementPublisher | None = None,
         energy_accumulator: EnergyAccumulator | None = None,
         device_id: str = "energy_iot_001",
+        battery_control_state_file: str | None = None,
     ):
         self.inverter_client = InverterModbusClient(
             host=inverter_host,
@@ -69,6 +72,17 @@ class IoTDevice:
         self.publisher = publisher or NullPublisher()
         self.energy_accumulator = energy_accumulator
         self.device_id = device_id
+        self._modbus_lock = threading.RLock()
+        self.battery_controller = BatteryController(
+            self.inverter_client,
+            device_id,
+            state_file=battery_control_state_file,
+            modbus_lock=self._modbus_lock,
+        )
+        if hasattr(self.publisher, "set_battery_command_handler"):
+            self.publisher.set_battery_command_handler(
+                self.battery_controller.handle
+            )
 
     def connect(self) -> bool:
         """Connect to both Modbus devices."""
@@ -126,7 +140,8 @@ class IoTDevice:
         Returns EnergyMeasurement or None if failed.
         """
         # Read Inverter first
-        inverter_data = self.inverter_client.read_measurements()
+        with self._modbus_lock:
+            inverter_data = self.inverter_client.read_measurements()
 
         if inverter_data is None:
             self._raise_fault("inverter_read_failed")
@@ -161,6 +176,9 @@ class IoTDevice:
             inverter_timestamp=inverter_data["timestamp"],
             powermeter_timestamp=pm_data["timestamp"]
         )
+        battery_telemetry = self.battery_controller.telemetry()
+        if battery_telemetry:
+            measurement.battery_state = battery_telemetry.to_payload()
 
         # Validate — catch silent failures before cloud
         if not measurement.is_valid:
@@ -258,6 +276,9 @@ if __name__ == "__main__":
                 "ENERGY_STATE_FILE", "energy_accounting.json"
             ),
             timezone_name=os.getenv("ENERGY_TIMEZONE", "Europe/Berlin"),
+        ),
+        battery_control_state_file=os.getenv(
+            "BATTERY_CONTROL_STATE_FILE", "battery_control.json"
         ),
         publisher=MQTTPublisher(
             broker_host=os.getenv("MQTT_HOST", "localhost"),

@@ -3,7 +3,11 @@ import json
 from types import SimpleNamespace
 
 from iot_device.buffer import LocalBuffer
-from iot_device.mqtt_publisher import MQTTPublisher, TOPIC_MEASUREMENTS
+from iot_device.mqtt_publisher import (
+    MQTTPublisher,
+    TOPIC_MEASUREMENTS,
+    battery_ack_topic,
+)
 from iot_device.calculator import EnergyMeasurement
 
 
@@ -27,6 +31,7 @@ def build_publisher(tmp_path):
     publisher._lock = threading.Lock()
     publisher.device_id = "test-device"
     publisher._connected = True
+    publisher._battery_command_handler = None
     return publisher
 
 
@@ -73,3 +78,23 @@ def test_measurement_payload_contains_daily_energy_totals(tmp_path):
     assert payload["daily_energy"]["pv_generation_wh"] == 42.0
     assert payload["daily_kpis"]["self_consumption_percent"] == 71.4
     assert payload["battery_provenance"]["pv_origin_wh"] == 10.0
+
+
+def test_mqtt_command_is_acknowledged_on_device_topic(tmp_path):
+    publisher = build_publisher(tmp_path)
+    publisher.set_battery_command_handler(
+        lambda payload: {
+            "command_id": payload["command_id"],
+            "status": "accepted",
+        }
+    )
+    message = SimpleNamespace(
+        payload=json.dumps({"command_id": "cmd-1"}).encode()
+    )
+
+    publisher._on_message(None, None, message)
+
+    topic, raw_payload, qos = publisher.client.messages[-1]
+    assert topic == battery_ack_topic("test-device")
+    assert json.loads(raw_payload)["command_id"] == "cmd-1"
+    assert qos == 1

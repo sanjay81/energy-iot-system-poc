@@ -30,9 +30,23 @@ REG_PV_PRODUCTION   = 0   # 40001
 REG_AC_OUTPUT       = 1   # 40002
 REG_BATTERY_POWER   = 2   # 40003
 REG_TIMESTAMP       = 3   # 40004-40007, UTC epoch milliseconds
+REG_BATTERY_SOC = 7
+REG_BATTERY_CAPACITY_WH = 8
+REG_MAX_CHARGE_POWER = 9
+REG_MAX_DISCHARGE_POWER = 10
+REG_MIN_SOC = 11
+REG_MAX_SOC = 12
+REG_BATTERY_AVAILABLE = 13
+REG_REQUESTED_POWER = 14  # 40015-40016, signed 32-bit at x10 scale
+REG_COMMAND_SEQUENCE = 16
+REG_ACK_SEQUENCE = 17
+REG_COMMAND_STATUS = 18
+REG_REJECTION_REASON = 19
 
 # Total registers we expose
-NUM_REGISTERS = 10
+# pymodbus' slave context translates protocol address 0 to data-block address
+# 1, so one extra storage slot is required for protocol register 19.
+NUM_REGISTERS = 21
 
 
 class InverterSimulator:

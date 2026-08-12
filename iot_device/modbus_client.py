@@ -8,6 +8,16 @@ logger = logging.getLogger(__name__)
 
 SCALING_FACTOR = 10
 
+BATTERY_STATUS = {0: "idle", 1: "accepted", 2: "rejected"}
+BATTERY_REJECTION_REASON = {
+    0: None,
+    1: "device_unavailable",
+    2: "charge_power_limit_exceeded",
+    3: "discharge_power_limit_exceeded",
+    4: "maximum_soc_reached",
+    5: "minimum_soc_reached",
+}
+
 
 def raw_to_watts_unsigned(raw: int) -> float:
     """Decode unsigned register — PV Production, AC Output."""
@@ -85,6 +95,59 @@ class InverterModbusClient:
         except ModbusException as e:
             logger.error(f"[Inverter] Connection error: {e}")
             return None
+
+    def read_battery_telemetry(self) -> dict | None:
+        """Read the battery capability, state, and latest command result."""
+        try:
+            result = self.client.read_holding_registers(
+                address=2, count=18, slave=1
+            )
+            if result.isError():
+                return None
+            registers = result.registers
+            return {
+                "actual_power_w": raw_to_watts_signed(registers[0]),
+                "timestamp": registers_to_utc_timestamp(registers[1:5]),
+                "soc_percent": registers[5] / 10,
+                "usable_capacity_kwh": registers[6] / 1000,
+                "max_charge_power_w": registers[7] / 10,
+                "max_discharge_power_w": registers[8] / 10,
+                "min_soc_percent": registers[9] / 10,
+                "max_soc_percent": registers[10] / 10,
+                "available": bool(registers[11]),
+                "requested_power_w": registers_to_watts_signed_32(
+                    registers[12], registers[13]
+                ),
+                "command_sequence": registers[14],
+                "ack_sequence": registers[15],
+                "command_status": BATTERY_STATUS.get(registers[16], "unknown"),
+                "rejection_reason": BATTERY_REJECTION_REASON.get(
+                    registers[17], "unknown_rejection"
+                ),
+            }
+        except ModbusException as error:
+            logger.error("[Battery] Telemetry read failed: %s", error)
+            return None
+
+    def write_battery_request(
+        self, requested_power_w: float, command_sequence: int
+    ) -> bool:
+        """Write a signed requested power and monotonically changing sequence."""
+        raw_power = int(requested_power_w * SCALING_FACTOR) & 0xFFFFFFFF
+        try:
+            result = self.client.write_registers(
+                address=14,
+                values=[
+                    (raw_power >> 16) & 0xFFFF,
+                    raw_power & 0xFFFF,
+                    command_sequence & 0xFFFF,
+                ],
+                slave=1,
+            )
+            return not result.isError()
+        except ModbusException as error:
+            logger.error("[Battery] Command write failed: %s", error)
+            return False
 
 
 class PowerMeterModbusClient:

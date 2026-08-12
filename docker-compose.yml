@@ -17,6 +17,9 @@ services:
     command: ["python", "-m", "simulators.coordinator"]
     environment:
       SIMULATOR_HOST: "0.0.0.0"
+      BATTERY_STATE_FILE: /data/battery_state.json
+    volumes:
+      - simulator-data:/data
     ports:
       - "5020:5020"
       - "5021:5021"
@@ -35,6 +38,7 @@ services:
       BUFFER_FILE: /data/iot_buffer.json
       ENERGY_STATE_FILE: /data/energy_accounting.json
       ENERGY_TIMEZONE: Europe/Berlin
+      BATTERY_CONTROL_STATE_FILE: /data/battery_control.json
       POLL_INTERVAL: "5"
     volumes:
       - gateway-data:/data
@@ -80,6 +84,20 @@ services:
         condition: service_healthy
     profiles: ["baseline"]
 
+  battery-check:
+    build: .
+    command: ["python", "-m", "simulations.battery_control_check"]
+    environment:
+      MQTT_HOST: mqtt
+      DEVICE_ID: energy_iot_001
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+    profiles: ["battery-check"]
+
 volumes:
   mqtt-data:
   gateway-data:
+  simulator-data:

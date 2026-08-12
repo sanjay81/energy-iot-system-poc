@@ -23,6 +23,7 @@ class EnergyMeasurement:
     battery_provenance: dict[str, Any] | None = None
     daily_kpis: dict[str, Any] | None = None
     completed_day: dict[str, Any] | None = None
+    battery_state: dict[str, Any] | None = None
     accounting_status: str | None = None
 
     @property

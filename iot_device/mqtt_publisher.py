@@ -15,6 +15,14 @@ TOPIC_MEASUREMENTS = "energy-iot/measurements"
 TOPIC_STATUS       = "energy-iot/status"
 TOPIC_FAULTS       = "energy-iot/faults"
 
+
+def battery_command_topic(device_id: str) -> str:
+    return f"energy-iot/{device_id}/battery/commands"
+
+
+def battery_ack_topic(device_id: str) -> str:
+    return f"energy-iot/{device_id}/battery/acknowledgements"
+
 # QoS level — at least once delivery
 QOS = 1
 
@@ -50,6 +58,7 @@ class MQTTPublisher:
         self._reconnect_delay = RECONNECT_DELAY_MIN
         self._lock = threading.Lock()
         self._pending_replay_mid = None
+        self._battery_command_handler = None
 
         # Setup MQTT client
         self.client = mqtt.Client(
@@ -73,6 +82,7 @@ class MQTTPublisher:
         self.client.on_connect    = self._on_connect
         self.client.on_disconnect = self._on_disconnect
         self.client.on_publish    = self._on_publish
+        self.client.on_message = self._on_message
 
     def _on_connect(self, client, userdata, flags, rc):
         """Called when connected to broker."""
@@ -98,6 +108,9 @@ class MQTTPublisher:
 
             # Upload any buffered measurements
             self._upload_buffer()
+            self.client.subscribe(
+                battery_command_topic(self.device_id), qos=QOS
+            )
 
         else:
             logger.error(f"[MQTT] Connection failed — code {rc}")
@@ -118,6 +131,32 @@ class MQTTPublisher:
             self._pending_replay_mid = None
             self._upload_buffer()
         logger.debug(f"[MQTT] Message {mid} published")
+
+    def _on_message(self, client, userdata, message):
+        if not self._battery_command_handler:
+            return
+        try:
+            payload = json.loads(message.payload.decode())
+            acknowledgement = self._battery_command_handler(payload)
+        except (UnicodeDecodeError, json.JSONDecodeError):
+            acknowledgement = {
+                "schema_version": 1,
+                "command_id": "unknown",
+                "device_id": self.device_id,
+                "status": "rejected",
+                "requested_power_w": None,
+                "actual_power_w": 0.0,
+                "timestamp": time.time(),
+                "rejection_reason": "invalid_json",
+            }
+        self.client.publish(
+            battery_ack_topic(self.device_id),
+            json.dumps(acknowledgement),
+            qos=QOS,
+        )
+
+    def set_battery_command_handler(self, handler) -> None:
+        self._battery_command_handler = handler
 
     def _upload_buffer(self):
         """
@@ -196,6 +235,8 @@ class MQTTPublisher:
             if measurement.completed_day is not None:
                 payload["completed_day"] = measurement.completed_day
             payload["accounting_status"] = measurement.accounting_status
+        if measurement.battery_state is not None:
+            payload["battery_state"] = measurement.battery_state
 
         with self._lock:
             if self._connected:

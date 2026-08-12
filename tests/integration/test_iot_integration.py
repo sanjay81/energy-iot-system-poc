@@ -343,6 +343,61 @@ class TestEnergyAccounting:
         ] == pytest.approx(0.0, abs=0.01)
 
 
+class TestSafeBatteryControl:
+    def test_gateway_commands_device_and_reads_actual_state(
+        self, coordinator, iot
+    ):
+        now = time.time()
+        acknowledgement = iot.battery_controller.handle(
+            {
+                "schema_version": 1,
+                "command_id": "integration-discharge",
+                "device_id": "energy_iot_001",
+                "requested_power_w": 1200,
+                "issued_at": now,
+            },
+            now=now,
+        )
+        try:
+            assert acknowledgement["status"] == "accepted"
+            assert acknowledgement["actual_power_w"] == pytest.approx(1200)
+            telemetry = iot.battery_controller.telemetry()
+            assert telemetry.actual_power_w == pytest.approx(1200)
+            assert telemetry.operating_mode == "discharging"
+            assert telemetry.usable_capacity_kwh == 10
+        finally:
+            stop_time = time.time()
+            iot.battery_controller.handle(
+                {
+                    "command_id": "integration-idle",
+                    "device_id": "energy_iot_001",
+                    "requested_power_w": 0,
+                    "issued_at": stop_time,
+                },
+                now=stop_time,
+            )
+
+    def test_device_rejects_unsafe_and_gateway_replays_duplicate(
+        self, iot
+    ):
+        now = time.time()
+        payload = {
+            "command_id": "integration-unsafe",
+            "device_id": "energy_iot_001",
+            "requested_power_w": 5000,
+            "issued_at": now,
+        }
+
+        first = iot.battery_controller.handle(payload, now=now)
+        replay = iot.battery_controller.handle(
+            {**payload, "requested_power_w": -500}, now=now
+        )
+
+        assert first["status"] == "rejected"
+        assert first["rejection_reason"] == "discharge_power_limit_exceeded"
+        assert replay == first
+
+
 # ─────────────────────────────────────────────────────────────
 # SECTION 3 — Connection Failure Tests
 # Tests for IoT behaviour when one device goes offline.

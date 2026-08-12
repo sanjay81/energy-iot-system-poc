@@ -153,6 +153,19 @@ class EnergyDashboard:
             if batt < 0
             else "[white]Idle[/white]"
         )
+        battery_state = latest.get("battery_state") or {}
+        if battery_state:
+            table.add_row(
+                "🔋  Battery SOC",
+                f"{battery_state.get('soc_percent', 0):.1f}%",
+                battery_state.get("operating_mode", "unknown").title(),
+            )
+            table.add_row(
+                "🔋  Requested / Actual",
+                f"{battery_state.get('requested_power_w', 0):.0f} / "
+                f"{battery_state.get('actual_power_w', 0):.0f} W",
+                "Available" if battery_state.get("available") else "Unavailable",
+            )
         table.add_row(
             "🔌  Grid Power",
             f"{abs(grid):.1f} W",
