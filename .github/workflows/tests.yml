@@ -24,6 +24,7 @@ jobs:
       - run: docker compose config --quiet
       - run: docker compose up --build --wait
       - run: docker compose ps
+      - run: docker compose --profile baseline run --rm baseline
       - if: always()
         run: docker compose logs
       - if: always()

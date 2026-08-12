@@ -81,6 +81,7 @@ class AccountingResult:
     flows: DailyEnergyFlows
     battery_provenance: BatteryProvenance
     kpis: DailyEnergyKPIs
+    completed_day: dict | None = None
 
 
 class EnergyAccumulator:
@@ -104,10 +105,14 @@ class EnergyAccumulator:
         self.flows = DailyEnergyFlows()
         self.battery_provenance = BatteryProvenance()
         self.peak_grid_demand_w = 0.0
+        self.completed_day: dict | None = None
         self._load()
 
     def process(self, sample: PowerSample) -> AccountingResult:
         with self._lock:
+            # A completed day is emitted once, on the reading that crosses
+            # local midnight; it is not repeated on later measurements.
+            self.completed_day = None
             sample_date = self._local_date(sample.timestamp)
             previous = self._latest
 
@@ -159,6 +164,7 @@ class EnergyAccumulator:
                 **asdict(self.battery_provenance)
             ),
             kpis=self._calculate_kpis(),
+            completed_day=self.completed_day,
         )
 
     def _integrate_interval(self, start: PowerSample, end: PowerSample) -> None:
@@ -168,7 +174,8 @@ class EnergyAccumulator:
             if self._local_date(start.timestamp) == self.totals.local_date:
                 self._add_interval(start, at_boundary)
             self._roll_to(self._local_date(end.timestamp))
-            self._add_interval(at_boundary, end)
+            if boundary < end.timestamp:
+                self._add_interval(at_boundary, end)
             return
 
         self._roll_to(self._local_date(end.timestamp))
@@ -375,6 +382,11 @@ class EnergyAccumulator:
 
     def _roll_to(self, local_date: str) -> None:
         if self.totals.local_date != local_date:
+            self.completed_day = {
+                "totals": asdict(self.totals),
+                "flows": asdict(self.flows),
+                "kpis": asdict(self._calculate_kpis()),
+            }
             self.totals = DailyEnergyTotals(
                 local_date=local_date,
                 timezone=self.timezone.key,

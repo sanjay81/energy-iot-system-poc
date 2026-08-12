@@ -28,6 +28,7 @@ Verified capabilities:
 - Chronological replay, removing records only after broker acknowledgement.
 - Event-driven Wh accounting with persistent Berlin-local daily totals.
 - Auditable daily KPIs with persistent PV/grid/unknown battery provenance.
+- Reproducible accelerated 24-hour no-control baseline scenario and report.
 - Docker Compose startup and health checks.
 - Unit and Modbus integration tests, including golden datasets.
 
@@ -123,6 +124,31 @@ from Step 1, current daily totals are reset because historical totals cannot be
 reliably reconstructed into attributed flows. Subsequent restarts preserve the
 complete totals, flows, peak, and provenance state.
 
+## Step 3 baseline scenario
+
+Step 3 freezes a deterministic clear-sky PV curve and household demand profile
+for 15 June 2026 in `Europe/Berlin`. It sends 289 five-minute samples (both
+midnight endpoints) through the real Modbus → accounting → KPI → MQTT path.
+Battery power is fixed at zero and smart control, tariffs, EV demand, and
+optimization are intentionally excluded.
+
+The baseline runner uses a 300-second accounting gap only for this accelerated
+scenario; the live gateway retains the production default of 60 seconds. The
+result records 288 integrated intervals and is compared exactly with the
+version-controlled golden report.
+
+Run and verify it with Docker:
+
+```bash
+docker compose up -d mqtt
+docker compose --profile baseline run --rm baseline
+```
+
+The generated report is written to `results/baseline_report.json`. The frozen
+benchmark is `simulations/golden/baseline_report.json` and currently records
+53.474483 kWh PV generation, 24.722733 kWh household consumption, 9.660677 kWh
+grid import, and 38.412427 kWh grid export.
+
 ## Repository structure
 
 ```text
@@ -130,6 +156,7 @@ complete totals, flows, peak, and provenance state.
 ├── cloud/                  # MQTT terminal dashboard
 ├── iot_device/             # Gateway, Modbus clients, MQTT and disk buffer
 ├── simulators/             # Shared scenarios and both Modbus servers
+├── simulations/            # Step 3 profile, runner, report and golden result
 ├── tests/
 │   ├── unit/               # Calculation, gateway, buffer and MQTT tests
 │   └── integration/        # Simulator-to-gateway golden datasets
@@ -236,6 +263,8 @@ injection, persistent buffer behavior, overflow, acknowledged MQTT replay, and
 end-to-end golden Modbus datasets. KPI tests cover PV/grid/unknown provenance,
 cross-day persistence, zero denominators, proportional discharge, peak demand,
 net grid energy, battery throughput, balance error, and Step 1 state migration.
+The Docker CI job also runs the full accelerated baseline and requires an exact
+match with the committed report.
 
 ## Important failures found during the POC
 

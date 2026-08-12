@@ -1,0 +1,38 @@
+{
+  "accounting_max_gap_seconds": 300.0,
+  "data_quality": {
+    "duplicate_readings": 0,
+    "energy_balance_pass": true,
+    "integrated_intervals": 288,
+    "out_of_order_readings": 0,
+    "stale_intervals": 0
+  },
+  "duration_hours": 24,
+  "end_timestamp_utc": 1781560800.0,
+  "energy_kwh": {
+    "battery_charge": 0.0,
+    "battery_discharge": 0.0,
+    "grid_export": 38.412427,
+    "grid_import": 9.660677,
+    "house_consumption": 24.722733,
+    "pv_generation": 53.474483
+  },
+  "kpis": {
+    "battery_throughput_kwh": 0.0,
+    "energy_balance_error_kwh": 0.0,
+    "energy_balance_error_percent": 0.0,
+    "net_grid_energy_kwh": -28.75175,
+    "peak_grid_demand_kw": 2.2355,
+    "self_consumption_percent": 28.16681,
+    "self_sufficiency_percent": 60.923911
+  },
+  "mqtt_message_count": 289,
+  "report_schema_version": 1,
+  "sample_count": 289,
+  "sample_interval_minutes": 5,
+  "scenario": "baseline_no_control_v1",
+  "scenario_date": "2026-06-15",
+  "smart_control_enabled": false,
+  "start_timestamp_utc": 1781474400.0,
+  "timezone": "Europe/Berlin"
+}

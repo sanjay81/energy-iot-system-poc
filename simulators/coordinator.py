@@ -27,14 +27,20 @@ class SystemCoordinator:
     - Testing the combined system (Phase 2)
     """
 
-    def __init__(self):
+    def __init__(
+        self,
+        host: str | None = None,
+        inverter_port: int | None = None,
+        powermeter_port: int | None = None,
+    ):
+        host = host or os.getenv("SIMULATOR_HOST", "localhost")
         self.inverter = InverterSimulator(
-            host=os.getenv("SIMULATOR_HOST", "localhost"),
-            port=int(os.getenv("INVERTER_PORT", "5020"))
+            host=host,
+            port=inverter_port or int(os.getenv("INVERTER_PORT", "5020"))
         )
         self.power_meter = PowerMeterSimulator(
-            host=os.getenv("SIMULATOR_HOST", "localhost"),
-            port=int(os.getenv("POWERMETER_PORT", "5021"))
+            host=host,
+            port=powermeter_port or int(os.getenv("POWERMETER_PORT", "5021"))
         )
         self.hour = 8.0
         self.battery_soc = 50.0
@@ -120,6 +126,12 @@ class SystemCoordinator:
         self._update_thread.start()
         logger.info("[Coordinator] Both simulators started")
 
+    def start_manual(self):
+        """Start Modbus servers without a wall-clock scenario update loop."""
+        self.inverter.start(update_registers=False)
+        self.power_meter.start()
+        logger.info("[Coordinator] Manual-clock simulators started")
+
     def stop(self):
         self._running = False
         self.inverter.stop()
@@ -172,6 +184,31 @@ class SystemCoordinator:
             f"House_calc={state.house_consumption}W"
         )
 
+        return state, grid_power
+
+    def inject_timestamped_scenario(
+        self,
+        pv: float,
+        house: float,
+        battery: float,
+        timestamp: float,
+    ):
+        """Write one deterministic shared state with an explicit UTC time."""
+        from simulators.scenarios import EnergyState
+
+        state = EnergyState(pv, house, battery)
+        self.inverter.store.setValues(
+            3,
+            0,
+            [
+                self.inverter._watts_to_raw(state.pv_production),
+                self.inverter._watts_to_raw(state.inverter_ac_output),
+                self.inverter._watts_to_raw(state.battery_power),
+            ],
+        )
+        self.inverter.set_timestamp(timestamp)
+        grid_power = state.house_consumption - state.inverter_ac_output
+        self.power_meter.set_grid_power(grid_power, timestamp)
         return state, grid_power
 
 

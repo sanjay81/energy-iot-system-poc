@@ -58,6 +58,28 @@ services:
     profiles: ["dashboard"]
     tty: true
 
+  baseline:
+    build: .
+    command:
+      - python
+      - -m
+      - simulations.baseline_day
+      - --mqtt-host
+      - mqtt
+      - --output
+      - /results/baseline_report.json
+      - --verify
+      - simulations/golden/baseline_report.json
+      - --headless
+    environment:
+      MQTT_HOST: mqtt
+    volumes:
+      - ./results:/results
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    profiles: ["baseline"]
+
 volumes:
   mqtt-data:
   gateway-data:
