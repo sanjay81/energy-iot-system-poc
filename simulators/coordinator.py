@@ -38,6 +38,8 @@ class SystemCoordinator:
         host: str | None = None,
         inverter_port: int | None = None,
         powermeter_port: int | None = None,
+        battery_state_file: str | None = None,
+        battery_config: dict | None = None,
     ):
         host = host or os.getenv("SIMULATOR_HOST", "localhost")
         self.inverter = InverterSimulator(
@@ -51,7 +53,8 @@ class SystemCoordinator:
         self.hour = 8.0
         self.battery_soc = 50.0
         self.battery = BatteryDevice(
-            state_file=os.getenv("BATTERY_STATE_FILE")
+            state_file=battery_state_file or os.getenv("BATTERY_STATE_FILE"),
+            **(battery_config or {}),
         )
         self._last_command_sequence = 0
         self._running = False
@@ -139,7 +142,26 @@ class SystemCoordinator:
         """Start Modbus servers without a wall-clock scenario update loop."""
         self.inverter.start(update_registers=False)
         self.power_meter.start()
+        self._running = True
+        self._write_battery_telemetry()
+        self._manual_command_thread = threading.Thread(
+            target=self._manual_command_loop,
+            daemon=True,
+            name="ManualBatteryCommandProcessor",
+        )
+        self._manual_command_thread.start()
         logger.info("[Coordinator] Manual-clock simulators started")
+
+    def _manual_command_loop(self):
+        while self._running:
+            self._apply_battery_request()
+            time.sleep(0.005)
+
+    def advance_battery(self, seconds: float) -> dict:
+        """Advance SOC by simulated time and refresh exposed telemetry."""
+        self.battery.advance(seconds)
+        self._write_battery_telemetry()
+        return self.battery.snapshot()
 
     def _apply_battery_request(self):
         registers = self.inverter.store.getValues(3, 14, count=3)

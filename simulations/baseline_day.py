@@ -26,10 +26,11 @@ DEVICE_ID = "baseline_no_control_v1"
 
 
 class MQTTCollector:
-    def __init__(self, host: str, port: int):
+    def __init__(self, host: str, port: int, device_id: str = DEVICE_ID):
+        self.device_id = device_id
         self.messages: dict[float, dict] = {}
         self.connected = threading.Event()
-        self.client = mqtt.Client(client_id=f"{DEVICE_ID}_collector")
+        self.client = mqtt.Client(client_id=f"{device_id}_collector")
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
         self.client.connect(host, port, keepalive=60)
@@ -42,7 +43,7 @@ class MQTTCollector:
 
     def _on_message(self, client, userdata, message):
         payload = json.loads(message.payload.decode())
-        if payload.get("device_id") == DEVICE_ID:
+        if payload.get("device_id") == self.device_id:
             self.messages[payload["timestamp"]] = payload
 
     def close(self):

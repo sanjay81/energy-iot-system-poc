@@ -58,6 +58,8 @@ class IoTDevice:
         controller_state_file: str | None = None,
         controller_max_power_w: float = 3000.0,
         controller_stale_after_seconds: float = 15.0,
+        controller_deadband_w: float = 50.0,
+        controller_clock=None,
     ):
         self.inverter_client = InverterModbusClient(
             host=inverter_host,
@@ -71,6 +73,7 @@ class IoTDevice:
         self._running = False
         self._last_measurement: Optional[EnergyMeasurement] = None
         self._fault_flags: list[str] = []
+        self.controller_clock = controller_clock or time.time
 
         # MQTT is an adapter, not a hard dependency of the gateway.
         # Local runs and tests use a no-op publisher unless one is injected.
@@ -94,6 +97,7 @@ class IoTDevice:
             mode=controller_mode,
             max_power_w=controller_max_power_w,
             stale_after_seconds=controller_stale_after_seconds,
+            deadband_w=controller_deadband_w,
             state_file=controller_state_file,
         )
 
@@ -213,7 +217,7 @@ class IoTDevice:
         self._clear_fault("invalid_measurement")
 
         controller_decision = self.self_consumption_controller.evaluate(
-            measurement
+            measurement, now=self.controller_clock()
         )
         measurement.controller_state = asdict(controller_decision)
 
@@ -316,6 +320,9 @@ if __name__ == "__main__":
         ),
         controller_stale_after_seconds=float(
             os.getenv("CONTROLLER_STALE_AFTER_SECONDS", "15")
+        ),
+        controller_deadband_w=float(
+            os.getenv("CONTROLLER_DEADBAND_W", "50")
         ),
         publisher=MQTTPublisher(
             broker_host=os.getenv("MQTT_HOST", "localhost"),

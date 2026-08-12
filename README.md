@@ -235,6 +235,46 @@ EMS_MODE=automatic docker compose up --build --wait
 docker compose --profile self-consumption-check run --rm --no-deps self-consumption-check
 ```
 
+## Step 6 baseline versus smart comparison
+
+Step 6 runs the unchanged Step 3 profile twice: once with an idle battery and
+once with the frozen Step 5 policy executing through Step 4. The profile has a
+SHA-256 fingerprint and the report embeds every controller and battery setting.
+The configuration is versioned as `baseline_vs_smart_v1`; it is not tuned while
+generating the comparison.
+
+Current deterministic results:
+
+| Metric | Baseline | Smart | Change |
+|---|---:|---:|---:|
+| Grid import | 9.660677 kWh | 0.224874 kWh | -97.672275% raw |
+| Grid export | 38.412427 kWh | 31.214607 kWh | -18.738259% |
+| Self-consumption | 28.166810% | 42.012698% | +13.845888 points |
+| Self-sufficiency | 60.923911% | 85.497569% | +24.573658 points |
+| Peak grid demand | 2.2355 kW | 0.4500 kW | -79.870275% |
+| Ending SOC | 50.0% | 27.5% | -22.5 points |
+
+The raw import reduction includes 2.25 kWh of net battery depletion because the
+smart case ends below its starting SOC. With that stored-energy change added
+back, smart grid import is 2.474874 kWh and the SOC-adjusted reduction is
+74.381982%. Both figures are reported to prevent the end-state difference from
+being hidden. Battery efficiency remains unset, matching the existing ideal
+Step 4 battery model.
+
+The smart run emitted 157 commands: 139 accepted and 18 rejected by Step 4.
+Accounting uses actual battery power and finishes with a 0.000132% energy
+balance error.
+
+Run and exactly verify the comparison:
+
+```bash
+docker compose up -d mqtt
+docker compose --profile comparison run --rm comparison
+```
+
+The generated result is `results/comparison_report.json`; the committed golden
+report is `simulations/golden/comparison_report.json`.
+
 ## Repository structure
 
 ```text
@@ -339,6 +379,7 @@ Gateway configuration:
 | `CONTROLLER_STATE_FILE` | `self_consumption_controller.json` | Last Step 5 decision state |
 | `CONTROLLER_MAX_POWER_W` | `3000` | Step 5 desired-power cap; not a safety limit |
 | `CONTROLLER_STALE_AFTER_SECONDS` | `15` | Maximum usable measurement age |
+| `CONTROLLER_DEADBAND_W` | `50` | Balance range that requests idle |
 
 ## Tests
 

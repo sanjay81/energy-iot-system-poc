@@ -43,6 +43,7 @@ services:
       CONTROLLER_STATE_FILE: /data/self_consumption_controller.json
       CONTROLLER_MAX_POWER_W: "3000"
       CONTROLLER_STALE_AFTER_SECONDS: "15"
+      CONTROLLER_DEADBAND_W: "50"
       POLL_INTERVAL: "5"
     volumes:
       - gateway-data:/data
@@ -113,6 +114,28 @@ services:
       gateway:
         condition: service_started
     profiles: ["self-consumption-check"]
+
+  comparison:
+    build: .
+    command:
+      - python
+      - -m
+      - simulations.smart_comparison
+      - --mqtt-host
+      - mqtt
+      - --output
+      - /results/comparison_report.json
+      - --verify
+      - simulations/golden/comparison_report.json
+      - --headless
+    environment:
+      MQTT_HOST: mqtt
+    volumes:
+      - ./results:/results
+    depends_on:
+      mqtt:
+        condition: service_healthy
+    profiles: ["comparison"]
 
 volumes:
   mqtt-data:
