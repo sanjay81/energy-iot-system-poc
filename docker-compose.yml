@@ -39,6 +39,10 @@ services:
       ENERGY_STATE_FILE: /data/energy_accounting.json
       ENERGY_TIMEZONE: Europe/Berlin
       BATTERY_CONTROL_STATE_FILE: /data/battery_control.json
+      EMS_MODE: ${EMS_MODE:-manual}
+      CONTROLLER_STATE_FILE: /data/self_consumption_controller.json
+      CONTROLLER_MAX_POWER_W: "3000"
+      CONTROLLER_STALE_AFTER_SECONDS: "15"
       POLL_INTERVAL: "5"
     volumes:
       - gateway-data:/data
@@ -96,6 +100,19 @@ services:
       gateway:
         condition: service_started
     profiles: ["battery-check"]
+
+  self-consumption-check:
+    build: .
+    command: ["python", "-m", "simulations.self_consumption_check"]
+    environment:
+      MQTT_HOST: mqtt
+      DEVICE_ID: energy_iot_001
+    depends_on:
+      mqtt:
+        condition: service_healthy
+      gateway:
+        condition: service_started
+    profiles: ["self-consumption-check"]
 
 volumes:
   mqtt-data:

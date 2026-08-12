@@ -237,6 +237,8 @@ class MQTTPublisher:
             payload["accounting_status"] = measurement.accounting_status
         if measurement.battery_state is not None:
             payload["battery_state"] = measurement.battery_state
+        if measurement.controller_state is not None:
+            payload["controller_state"] = measurement.controller_state
 
         with self._lock:
             if self._connected:

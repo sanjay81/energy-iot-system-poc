@@ -24,6 +24,7 @@ class EnergyMeasurement:
     daily_kpis: dict[str, Any] | None = None
     completed_day: dict[str, Any] | None = None
     battery_state: dict[str, Any] | None = None
+    controller_state: dict[str, Any] | None = None
     accounting_status: str | None = None
 
     @property

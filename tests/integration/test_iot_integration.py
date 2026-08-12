@@ -398,6 +398,41 @@ class TestSafeBatteryControl:
         assert replay == first
 
 
+class TestAutomaticSelfConsumption:
+    def test_surplus_decision_executes_only_through_step4(
+        self, coordinator, tmp_path
+    ):
+        coordinator.inject_scenario(pv=5000, house=2000, battery=0)
+        device = IoTDevice(
+            publisher=RecordingPublisher(),
+            device_id="automatic-integration",
+            controller_mode="automatic",
+            controller_state_file=str(tmp_path / "controller.json"),
+            battery_control_state_file=str(tmp_path / "commands.json"),
+        )
+        assert device.connect()
+        try:
+            measurement = device.poll_once()
+            assert measurement.controller_state["reason"] == "pv_surplus"
+            assert measurement.controller_state["desired_power_w"] == pytest.approx(-3000)
+            assert measurement.controller_state["command_status"] == "accepted"
+            telemetry = device.battery_controller.telemetry()
+            assert telemetry.actual_power_w == pytest.approx(-3000)
+            assert telemetry.operating_mode == "charging"
+        finally:
+            now = time.time()
+            device.battery_controller.handle(
+                {
+                    "command_id": "automatic-integration-idle",
+                    "device_id": "automatic-integration",
+                    "requested_power_w": 0,
+                    "issued_at": now,
+                },
+                now=now,
+            )
+            device.disconnect()
+
+
 # ─────────────────────────────────────────────────────────────
 # SECTION 3 — Connection Failure Tests
 # Tests for IoT behaviour when one device goes offline.

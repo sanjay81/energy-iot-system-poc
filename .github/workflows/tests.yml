@@ -26,6 +26,8 @@ jobs:
       - run: docker compose ps
       - run: docker compose --profile baseline run --rm baseline
       - run: docker compose --profile battery-check run --rm battery-check
+      - run: EMS_MODE=automatic docker compose up -d --force-recreate --no-deps gateway
+      - run: docker compose --profile self-consumption-check run --rm --no-deps self-consumption-check
       - if: always()
         run: docker compose logs
       - if: always()

@@ -30,6 +30,7 @@ Verified capabilities:
 - Auditable daily KPIs with persistent PV/grid/unknown battery provenance.
 - Reproducible accelerated 24-hour no-control baseline scenario and report.
 - Safe command-driven battery interface with SOC and power-limit enforcement.
+- Opt-in deterministic self-consumption controller using the Step 4 contract.
 - Docker Compose startup and health checks.
 - Unit and Modbus integration tests, including golden datasets.
 
@@ -200,6 +201,40 @@ docker compose up --build --wait
 docker compose --profile battery-check run --rm battery-check
 ```
 
+## Step 5 automatic self-consumption
+
+Step 5 is a separate decision layer. It decides the desired battery power and
+submits an ordinary versioned command to Step 4. It cannot write Modbus, change
+SOC, enforce device limits, or assume that requested power was executed. Step 4
+continues to accept or reject every request and reports actual power.
+
+The initial deterministic policy is intentionally narrow:
+
+```text
+PV surplus       -> request charge:    -min(PV - house, controller limit)
+Household deficit -> request discharge: +min(house - PV, controller limit)
+Within deadband   -> request idle:       0 W
+Stale/invalid/lost measurement -> fail-safe idle request
+```
+
+Automatic operation is opt-in. `EMS_MODE=manual` is the default and emits no
+automatic commands. This preserves direct Step 4 control and the Step 3
+no-control benchmark. Replayed/out-of-order measurements and unchanged desired
+power do not create duplicate commands. The last measurement, desired power,
+and decision persist so a restart does not repeat the previous action.
+
+Controller decisions are included in MQTT measurements as `controller_state`,
+including desired power, reason, command ID, Step 4 acknowledgement, actual
+power, and rejection reason. Tariffs, forecasts, EV scheduling, battery
+efficiency optimization, and economic dispatch remain outside Step 5.
+
+Run automatic mode and its Docker check:
+
+```bash
+EMS_MODE=automatic docker compose up --build --wait
+docker compose --profile self-consumption-check run --rm --no-deps self-consumption-check
+```
+
 ## Repository structure
 
 ```text
@@ -300,6 +335,10 @@ Gateway configuration:
 | `ENERGY_TIMEZONE` | `Europe/Berlin` | Daily-total boundary timezone |
 | `BATTERY_CONTROL_STATE_FILE` | `battery_control.json` | Command IDs and acknowledgements |
 | `BATTERY_STATE_FILE` | unset | Simulator SOC and device command state |
+| `EMS_MODE` | `manual` | `manual` or opt-in `automatic` control mode |
+| `CONTROLLER_STATE_FILE` | `self_consumption_controller.json` | Last Step 5 decision state |
+| `CONTROLLER_MAX_POWER_W` | `3000` | Step 5 desired-power cap; not a safety limit |
+| `CONTROLLER_STALE_AFTER_SECONDS` | `15` | Maximum usable measurement age |
 
 ## Tests
 

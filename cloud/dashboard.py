@@ -166,6 +166,18 @@ class EnergyDashboard:
                 f"{battery_state.get('actual_power_w', 0):.0f} W",
                 "Available" if battery_state.get("available") else "Unavailable",
             )
+        controller = latest.get("controller_state") or {}
+        if controller:
+            table.add_row(
+                "EMS controller",
+                controller.get("mode", "unknown").title(),
+                controller.get("reason", "unknown"),
+            )
+            table.add_row(
+                "EMS desired power",
+                f"{controller.get('desired_power_w', 0):.0f} W",
+                controller.get("command_status") or controller.get("status", ""),
+            )
         table.add_row(
             "🔌  Grid Power",
             f"{abs(grid):.1f} W",

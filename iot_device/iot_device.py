@@ -18,6 +18,7 @@ from iot_device.calculator import (
 from iot_device.publisher import MeasurementPublisher, NullPublisher
 from iot_device.energy_accounting import EnergyAccumulator, PowerSample
 from iot_device.battery_control import BatteryController
+from iot_device.self_consumption_controller import SelfConsumptionController
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -53,6 +54,10 @@ class IoTDevice:
         energy_accumulator: EnergyAccumulator | None = None,
         device_id: str = "energy_iot_001",
         battery_control_state_file: str | None = None,
+        controller_mode: str = "manual",
+        controller_state_file: str | None = None,
+        controller_max_power_w: float = 3000.0,
+        controller_stale_after_seconds: float = 15.0,
     ):
         self.inverter_client = InverterModbusClient(
             host=inverter_host,
@@ -83,6 +88,14 @@ class IoTDevice:
             self.publisher.set_battery_command_handler(
                 self.battery_controller.handle
             )
+        self.self_consumption_controller = SelfConsumptionController(
+            device_id=device_id,
+            command_handler=self.battery_controller.handle,
+            mode=controller_mode,
+            max_power_w=controller_max_power_w,
+            stale_after_seconds=controller_stale_after_seconds,
+            state_file=controller_state_file,
+        )
 
     def connect(self) -> bool:
         """Connect to both Modbus devices."""
@@ -144,6 +157,9 @@ class IoTDevice:
             inverter_data = self.inverter_client.read_measurements()
 
         if inverter_data is None:
+            self.self_consumption_controller.fail_safe(
+                "inverter_measurement_unavailable"
+            )
             self._raise_fault("inverter_read_failed")
             self._publish_active_faults()
             return None
@@ -155,6 +171,9 @@ class IoTDevice:
         pm_data = self.powermeter_client.read_grid_power()
 
         if pm_data is None:
+            self.self_consumption_controller.fail_safe(
+                "powermeter_measurement_unavailable"
+            )
             self._raise_fault("powermeter_read_failed")
             self._publish_active_faults()
             return None
@@ -182,6 +201,9 @@ class IoTDevice:
 
         # Validate — catch silent failures before cloud
         if not measurement.is_valid:
+            self.self_consumption_controller.fail_safe(
+                "invalid_measurement"
+            )
             self._raise_fault("invalid_measurement")
             logger.error(
                 f"[IoT] Invalid measurement detected: {measurement}"
@@ -189,6 +211,11 @@ class IoTDevice:
             self._publish_active_faults()
             return None
         self._clear_fault("invalid_measurement")
+
+        controller_decision = self.self_consumption_controller.evaluate(
+            measurement
+        )
+        measurement.controller_state = asdict(controller_decision)
 
         if self.energy_accumulator:
             accounting = self.energy_accumulator.process(
@@ -279,6 +306,16 @@ if __name__ == "__main__":
         ),
         battery_control_state_file=os.getenv(
             "BATTERY_CONTROL_STATE_FILE", "battery_control.json"
+        ),
+        controller_mode=os.getenv("EMS_MODE", "manual"),
+        controller_state_file=os.getenv(
+            "CONTROLLER_STATE_FILE", "self_consumption_controller.json"
+        ),
+        controller_max_power_w=float(
+            os.getenv("CONTROLLER_MAX_POWER_W", "3000")
+        ),
+        controller_stale_after_seconds=float(
+            os.getenv("CONTROLLER_STALE_AFTER_SECONDS", "15")
         ),
         publisher=MQTTPublisher(
             broker_host=os.getenv("MQTT_HOST", "localhost"),
