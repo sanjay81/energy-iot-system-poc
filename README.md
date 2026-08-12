@@ -27,6 +27,7 @@ Verified capabilities:
 - Atomic disk buffering while MQTT is unavailable.
 - Chronological replay, removing records only after broker acknowledgement.
 - Event-driven Wh accounting with persistent Berlin-local daily totals.
+- Auditable daily KPIs with persistent PV/grid/unknown battery provenance.
 - Docker Compose startup and health checks.
 - Unit and Modbus integration tests, including golden datasets.
 
@@ -77,6 +78,50 @@ integrated. A reading is identified by device/source and timestamp. Exact
 duplicates are ignored, while older out-of-order readings do not modify live
 totals. The latest accepted reading and current daily totals are persisted
 atomically so accounting continues after restart.
+
+## Daily energy KPIs
+
+Battery energy is tracked in three persistent virtual provenance buckets:
+`pv_origin_wh`, `grid_origin_wh`, and `unknown_origin_wh`. Charging is allocated
+PV-first: PV serves the house, then charges the battery, and only the remainder
+is exported. Any charging not covered by PV surplus is grid-origin. Discharge
+is withdrawn proportionally from all three buckets because stored energy is
+physically mixed.
+
+Provenance survives restart and Berlin-local midnight. PV-origin energy stored
+on one day therefore contributes to self-sufficiency when it supplies the
+house on a later day. Unknown- and grid-origin discharge never count as local
+renewable supply. Step 2 assumes 100% battery accounting efficiency; explicit
+loss modelling belongs with the later battery/SOC model.
+
+The daily formulas are:
+
+```text
+PV used locally = PV direct to house + PV sent to battery
+Self-consumption = PV used locally / PV generation × 100
+
+Locally supplied consumption =
+    PV direct to house + PV-origin battery discharge to house
+Self-sufficiency = locally supplied consumption / house consumption × 100
+
+Peak grid demand = maximum positive grid import power
+Net grid energy = grid import - grid export
+Battery throughput = battery charge + battery discharge
+
+Energy entering = PV + grid import + battery discharge
+Energy leaving = house consumption + grid export + battery charge
+Energy balance error = energy entering - energy leaving
+```
+
+Self-consumption is `null` when there is no PV generation; self-sufficiency is
+`null` when there is no household consumption. Each has an explicit
+`not_applicable` status. Percentage KPIs are bounded to 0–100%. Energy balance
+error is also exposed as an absolute percentage of the larger boundary flow.
+
+Step 2 introduces a versioned accounting-state schema. On the one-time upgrade
+from Step 1, current daily totals are reset because historical totals cannot be
+reliably reconstructed into attributed flows. Subsequent restarts preserve the
+complete totals, flows, peak, and provenance state.
 
 ## Repository structure
 
@@ -188,7 +233,9 @@ docker compose config --quiet
 The tests cover calculation rules, physical constraints, register encoding,
 sign and scaling conventions, timing gaps, fault forwarding, publisher
 injection, persistent buffer behavior, overflow, acknowledged MQTT replay, and
-end-to-end golden Modbus datasets.
+end-to-end golden Modbus datasets. KPI tests cover PV/grid/unknown provenance,
+cross-day persistence, zero denominators, proportional discharge, peak demand,
+net grid energy, battery throughput, balance error, and Step 1 state migration.
 
 ## Important failures found during the POC
 

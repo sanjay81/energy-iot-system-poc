@@ -119,3 +119,5 @@ def test_gateway_attaches_persisted_daily_energy_totals(tmp_path):
     assert second.accounting_status == "integrated"
     assert second.daily_energy["integrated_intervals"] == 1
     assert second.daily_energy["pv_generation_wh"] > 0
+    assert second.daily_kpis["self_consumption_percent"] is not None
+    assert second.battery_provenance["unknown_origin_wh"] == 0

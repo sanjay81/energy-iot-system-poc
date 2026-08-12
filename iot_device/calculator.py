@@ -19,6 +19,9 @@ class EnergyMeasurement:
     inverter_timestamp: float   # when Inverter was read
     powermeter_timestamp: float # when Power Meter was read
     daily_energy: dict[str, Any] | None = None
+    daily_energy_flows: dict[str, Any] | None = None
+    battery_provenance: dict[str, Any] | None = None
+    daily_kpis: dict[str, Any] | None = None
     accounting_status: str | None = None
 
     @property

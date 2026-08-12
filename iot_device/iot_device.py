@@ -185,6 +185,11 @@ class IoTDevice:
             )
             measurement.accounting_status = accounting.status
             measurement.daily_energy = asdict(accounting.totals)
+            measurement.daily_energy_flows = asdict(accounting.flows)
+            measurement.battery_provenance = asdict(
+                accounting.battery_provenance
+            )
+            measurement.daily_kpis = asdict(accounting.kpis)
 
         # Warn if timing gap too large
         if measurement.timestamp_delta_ms > MAX_TIMESTAMP_DELTA_MS:

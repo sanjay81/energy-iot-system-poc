@@ -202,6 +202,44 @@ class EnergyDashboard:
                 "Charge / Discharge"
             )
 
+        kpis = latest.get("daily_kpis") or {}
+        if kpis:
+            def percentage(value):
+                return "N/A" if value is None else f"{value:.1f}%"
+
+            table.add_section()
+            table.add_row(
+                "KPI: Self-consumption",
+                percentage(kpis.get("self_consumption_percent")),
+                kpis.get("self_consumption_status", "")
+            )
+            table.add_row(
+                "KPI: Self-sufficiency",
+                percentage(kpis.get("self_sufficiency_percent")),
+                kpis.get("self_sufficiency_status", "")
+            )
+            table.add_row(
+                "KPI: Peak grid demand",
+                f"{kpis.get('peak_grid_demand_w', 0):.1f} W",
+                "Daily maximum import"
+            )
+            table.add_row(
+                "KPI: Net grid energy",
+                f"{kpis.get('net_grid_energy_wh', 0) / 1000:.3f} kWh",
+                "Import - Export"
+            )
+            table.add_row(
+                "KPI: Battery throughput",
+                f"{kpis.get('battery_throughput_wh', 0) / 1000:.3f} kWh",
+                "Charge + Discharge"
+            )
+            balance_error = kpis.get("energy_balance_error_percent", 0)
+            table.add_row(
+                "KPI: Energy balance error",
+                f"{balance_error:.2f}%",
+                "[green]OK[/green]" if balance_error <= 1 else "[red]CHECK[/red]"
+            )
+
         # Status panel
         buffered_str = (
             f"[yellow]{buf_count} buffered[/yellow]"

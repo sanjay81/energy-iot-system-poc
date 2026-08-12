@@ -190,6 +190,9 @@ class MQTTPublisher:
         }
         if measurement.daily_energy is not None:
             payload["daily_energy"] = measurement.daily_energy
+            payload["daily_energy_flows"] = measurement.daily_energy_flows
+            payload["battery_provenance"] = measurement.battery_provenance
+            payload["daily_kpis"] = measurement.daily_kpis
             payload["accounting_status"] = measurement.accounting_status
 
         with self._lock:

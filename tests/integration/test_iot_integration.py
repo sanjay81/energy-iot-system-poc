@@ -332,6 +332,15 @@ class TestEnergyAccounting:
         assert second.daily_energy["house_consumption_wh"] == pytest.approx(
             expected_house_wh, rel=0.01
         )
+        assert second.daily_kpis["self_consumption_percent"] == pytest.approx(
+            50.0, rel=0.01
+        )
+        assert second.daily_kpis["self_sufficiency_percent"] == pytest.approx(
+            100.0, rel=0.01
+        )
+        assert second.daily_kpis[
+            "energy_balance_error_percent"
+        ] == pytest.approx(0.0, abs=0.01)
 
 
 # ─────────────────────────────────────────────────────────────

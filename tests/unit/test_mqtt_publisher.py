@@ -61,6 +61,9 @@ def test_measurement_payload_contains_daily_energy_totals(tmp_path):
         powermeter_timestamp=100.01,
         accounting_status="integrated",
         daily_energy={"local_date": "2026-08-12", "pv_generation_wh": 42.0},
+        daily_energy_flows={"pv_direct_to_house_wh": 20.0},
+        battery_provenance={"pv_origin_wh": 10.0},
+        daily_kpis={"self_consumption_percent": 71.4},
     )
 
     assert publisher.publish_measurement(measurement)
@@ -68,3 +71,5 @@ def test_measurement_payload_contains_daily_energy_totals(tmp_path):
 
     assert payload["accounting_status"] == "integrated"
     assert payload["daily_energy"]["pv_generation_wh"] == 42.0
+    assert payload["daily_kpis"]["self_consumption_percent"] == 71.4
+    assert payload["battery_provenance"]["pv_origin_wh"] == 10.0
