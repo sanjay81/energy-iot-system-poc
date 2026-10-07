@@ -2,6 +2,25 @@
 
 [![tests](https://github.com/sanjay81/energy-iot-system-poc/actions/workflows/tests.yml/badge.svg)](https://github.com/sanjay81/energy-iot-system-poc/actions/workflows/tests.yml)
 
+## Portfolio overview
+
+This project is a **software-only IoT/edge validation POC** designed to demonstrate system integration, protocol handling, resilience, deterministic testing, and measurable energy-control behavior.
+
+**What it showcases**
+
+- Python-based edge/gateway logic.
+- Modbus TCP device simulation and register-contract validation.
+- MQTT messaging with QoS, status, fault, and acknowledgement flows.
+- Persistent buffering and ordered replay during broker outages.
+- Docker Compose orchestration and health checks.
+- Unit, integration, golden-dataset, and end-to-end tests.
+- Energy accounting and KPI validation.
+- Safe command-driven battery control.
+- Deterministic self-consumption control.
+- Baseline-versus-smart comparison with reproducible metrics.
+
+The POC intentionally uses simulated devices and local infrastructure so the entire system can be published and reproduced without proprietary hardware or customer code.
+
 A software-only proof of concept for an energy-monitoring gateway. It simulates
 an inverter and power meter, reads both over Modbus TCP, derives household
 consumption, validates the result, and publishes measurements and faults over
